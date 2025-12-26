@@ -36,10 +36,12 @@ def build_index(texts: list[str]):
     db = FAISS.from_documents(docs, embeddings)
     return db
 
-def query_index(db, query: str, k: int = 2):
-    """Search the FAISS index for the most relevant text chunks."""
+def query_index(db, query: str, k: int = 3):
+    """Search the FAISS index for the most relevant text chunks and combine them."""
     results = db.similarity_search(query, k=k)
-    return [r.page_content for r in results]
+    # Combine multiple chunks into one coherent answer
+    combined_answer = "\n\n".join([r.page_content for r in results])
+    return combined_answer
 
 def save_index(db, path: str = "faiss_index"):
     """Save FAISS index to local disk."""
@@ -49,3 +51,4 @@ def load_index(path: str = "faiss_index"):
     """Load FAISS index from local disk."""
     embeddings = get_embeddings()
     return FAISS.load_local(path, embeddings, allow_dangerous_deserialization=True)
+
