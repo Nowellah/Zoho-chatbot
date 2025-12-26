@@ -14,9 +14,10 @@ FAQS = {
     "location": "We are located at Plot 12, Kampala Road, Kampala, Uganda.",
     "services": "We provide accounting, auditing, and tax advisory services.",
 }
-app = FastAPI()
+
 db = None  # global vector store
-CONFIDENCE_THRESHOLD = 0.65  # adjust as needed
+chat_history = []  # store conversation turns
+CONFIDENCE_THRESHOLD = 0.65
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+db = None
 
 
 @app.post("/ingest")
@@ -53,12 +55,13 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
-    global db
+    global db, chat_history
     query = request.query.lower()
 
     # Step 1: Check FAQ dictionary
     for keyword, answer in FAQS.items():
         if keyword in query:
+            chat_history.append({"query": request.query, "answer": answer})
             return ChatResponse(answer=answer, routed_to="AI")
 
     # Step 2: Fall back to knowledge base
@@ -68,20 +71,26 @@ def chat_endpoint(request: ChatRequest):
             routed_to="Human",
         )
 
-    # Use similarity search with scores
     results = db.similarity_search_with_score(request.query, k=3)
     if not results:
+        chat_history.append(
+            {"query": request.query, "answer": "No relevant info found"}
+        )
         return ChatResponse(
             answer="No relevant info found. Routed to human.", routed_to="Human"
         )
 
-    # Check confidence threshold
     best_chunk, score = results[0]
     if score >= CONFIDENCE_THRESHOLD:
-        # Summarize top chunks
-        answer = query_index(db, request.query, k=3)
+        # Summarize top chunks with history context
+        context = " ".join(
+            [turn["query"] + " " + turn["answer"] for turn in chat_history[-3:]]
+        )
+        answer = query_index(db, f"{context}\n\nUser: {request.query}", k=3)
+        chat_history.append({"query": request.query, "answer": answer})
         return ChatResponse(answer=answer, routed_to="AI")
     else:
+        chat_history.append({"query": request.query, "answer": "Confidence too low"})
         return ChatResponse(
             answer="Confidence too low. Routed to human.", routed_to="Human"
         )
