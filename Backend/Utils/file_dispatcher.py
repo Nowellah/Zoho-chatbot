@@ -1,6 +1,7 @@
 import os
 from .file_loader import load_pdf, load_docx, load_txt
 
+
 def dispatch_file(path: str) -> str:
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":

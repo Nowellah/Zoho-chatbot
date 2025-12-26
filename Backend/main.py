@@ -12,10 +12,12 @@ FAQS = {
     "office hours": "Our office is open Monday to Friday, 9 AM – 5 PM.",
     "contact": "You can reach us at support@example.com or call +256-700-123456.",
     "location": "We are located at Plot 12, Kampala Road, Kampala, Uganda.",
-    "services": "We provide accounting, auditing, and tax advisory services."
+    "services": "We provide accounting, auditing, and tax advisory services.",
 }
 app = FastAPI()
 db = None  # global vector store
+CONFIDENCE_THRESHOLD = 0.65  # adjust as needed
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,7 +29,9 @@ async def lifespan(app: FastAPI):
         print("No existing index found. Starting fresh.")
     yield
 
+
 app = FastAPI(lifespan=lifespan)
+
 
 @app.post("/ingest")
 async def ingest_files(files: List[UploadFile] = File(...)):
@@ -46,6 +50,7 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 
     return {"status": f"{len(files)} files ingested and saved successfully"}
 
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
     global db
@@ -58,10 +63,25 @@ def chat_endpoint(request: ChatRequest):
 
     # Step 2: Fall back to knowledge base
     if db is None:
-        return ChatResponse(answer="Knowledge base is empty. Please upload files first.", routed_to="Human")
+        return ChatResponse(
+            answer="Knowledge base is empty. Please upload files first.",
+            routed_to="Human",
+        )
 
-    answer = query_index(db, request.query, k=3)
-    if answer.strip() and answer != "No relevant info found.":
+    # Use similarity search with scores
+    results = db.similarity_search_with_score(request.query, k=3)
+    if not results:
+        return ChatResponse(
+            answer="No relevant info found. Routed to human.", routed_to="Human"
+        )
+
+    # Check confidence threshold
+    best_chunk, score = results[0]
+    if score >= CONFIDENCE_THRESHOLD:
+        # Summarize top chunks
+        answer = query_index(db, request.query, k=3)
         return ChatResponse(answer=answer, routed_to="AI")
-
-    return ChatResponse(answer="No relevant info found. Routed to human.", routed_to="Human")
+    else:
+        return ChatResponse(
+            answer="Confidence too low. Routed to human.", routed_to="Human"
+        )
