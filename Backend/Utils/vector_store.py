@@ -1,9 +1,10 @@
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.documents import Document
 import os
 from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_classic.chains.summarize import load_summarize_chain
 
 # Load environment variables
 load_dotenv()
@@ -37,11 +38,20 @@ def build_index(texts: list[str]):
     return db
 
 def query_index(db, query: str, k: int = 3):
-    """Search the FAISS index for the most relevant text chunks and combine them."""
+    """Search FAISS index, retrieve top-k chunks, and summarize them into a single answer."""
     results = db.similarity_search(query, k=k)
-    # Combine multiple chunks into one coherent answer
-    combined_answer = "\n\n".join([r.page_content for r in results])
-    return combined_answer
+    if not results:
+        return "No relevant info found."
+
+    # Combine chunks
+    combined_texts = [r.page_content for r in results]
+
+    # Summarize using ChatOpenAI
+    llm = ChatOpenAI(temperature=0)  # deterministic summarization
+    chain = load_summarize_chain(llm, chain_type="stuff")
+    summary = chain.run(combined_texts)
+
+    return summary
 
 def save_index(db, path: str = "faiss_index"):
     """Save FAISS index to local disk."""
@@ -51,4 +61,3 @@ def load_index(path: str = "faiss_index"):
     """Load FAISS index from local disk."""
     embeddings = get_embeddings()
     return FAISS.load_local(path, embeddings, allow_dangerous_deserialization=True)
-
