@@ -27,13 +27,14 @@ async def ingest_files(files: List[UploadFile] = File(...)):
 
     return {"status": f"{len(files)} files ingested successfully"}
 
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
     global db
     if db is None:
         return ChatResponse(answer="Knowledge base is empty. Please upload files first.", routed_to="Human")
 
-    results = query_index(db, request.query)
-    if results:
-        return ChatResponse(answer=results[0], routed_to="AI")
+    answer = query_index(db, request.query, k=3)  # fetch top 3 chunks
+    if answer.strip():
+        return ChatResponse(answer=answer, routed_to="AI")
     return ChatResponse(answer="No relevant info found. Routed to human.", routed_to="Human")
